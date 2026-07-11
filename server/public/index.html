@@ -145,6 +145,51 @@
   .kid-header .meta{flex:1;min-width:140px;}
   .kid-header .meta h2{margin:0 0 2px;font-size:22px;font-weight:800;}
   .kid-header .meta span{color:var(--ink-soft);font-size:13px;font-weight:600;}
+  .edit-points-btn{flex:0 0 auto;padding:11px 18px;}
+
+  .today-card{
+    background:var(--card);border-radius:22px;padding:20px 22px;margin-bottom:14px;
+    box-shadow:0 1px 0 var(--line), 0 6px 16px var(--shadow);
+    display:flex;align-items:baseline;gap:14px;
+  }
+  .today-label{font-weight:800;font-size:15px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
+  .today-total{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
+    font-weight:800;font-size:clamp(30px,6vw,40px);color:var(--fur-dark);line-height:1;
+  }
+  @media (prefers-color-scheme:dark){ .today-total{color:var(--fur);} }
+  :root[data-theme="dark"] .today-total{color:var(--fur);}
+  .today-total.neg{color:var(--coral-dark);}
+
+  .today-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
+  .today-chip{
+    display:flex;align-items:center;gap:7px;background:var(--card);border-radius:999px;padding:6px 12px 6px 6px;
+    box-shadow:0 1px 0 var(--line);font-size:13px;font-weight:700;
+  }
+  .today-chip-icon{width:26px;height:26px;border-radius:50%;background:var(--paper-alt);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto;}
+  .today-chip-icon svg{width:18px;height:18px;}
+  .today-chip-count{font-family:ui-monospace,monospace;font-weight:800;color:var(--fur-dark);}
+  .today-chip-count.neg{color:var(--coral-dark);}
+
+  .day-strip-label{font-weight:800;font-size:13px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;}
+  .day-strip-wrap{overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch;}
+  .day-strip{display:flex;gap:10px;}
+  .day-card{
+    flex:0 0 auto;min-width:78px;background:var(--card);border-radius:16px;padding:12px 10px;
+    box-shadow:0 1px 0 var(--line), 0 3px 10px var(--shadow); text-align:center;
+    display:flex;flex-direction:column;gap:6px;border:2px solid transparent;
+  }
+  .day-card.current{border-color:var(--fur);}
+  .day-card-label{font-size:11.5px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.02em;}
+  .day-card-total{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
+    font-weight:800;font-size:19px;color:var(--fur-dark);
+  }
+  @media (prefers-color-scheme:dark){ .day-card-total{color:var(--fur);} }
+  :root[data-theme="dark"] .day-card-total{color:var(--fur);}
+  .day-card-total.neg{color:var(--coral-dark);}
+
+  #fireworkCanvas{position:fixed;inset:0;pointer-events:none;z-index:15;}
   .kid-total{
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;
     font-weight:800;font-size:clamp(30px,6vw,40px);color:var(--fur-dark);line-height:1;
@@ -278,7 +323,7 @@
   ];
 
   var state = {kids:[]};
-  var route = {kidId:null};
+  var route = {kidId:null, view:"overview"};
   var logOpenIds = {};
   var modalOpen = false;
   var confirmRemoveId = null;
@@ -290,6 +335,30 @@
     return kid.log.reduce(function(sum,e){return e.catId===catId ? sum+e.delta : sum;},0);
   }
   function uidLocal(){ return "tmp-"+Math.random().toString(36).slice(2,10); }
+
+  function dayStartOf(ts){
+    var d = new Date(ts);
+    d.setHours(0,0,0,0);
+    return d.getTime();
+  }
+  function groupByDay(kid){
+    var map = {};
+    kid.log.forEach(function(e){
+      var ts = e.ts || Date.now();
+      var key = dayStartOf(ts);
+      if(!map[key]) map[key] = {dayStart:key, total:0, entries:[]};
+      map[key].total += e.delta;
+      map[key].entries.push(e);
+    });
+    return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return a.dayStart-b.dayStart;});
+  }
+  function dayLabel(dayStart){
+    var today = dayStartOf(Date.now());
+    var diff = Math.round((today-dayStart)/86400000);
+    if(diff===0) return "Today";
+    if(diff===1) return "Yesterday";
+    return new Date(dayStart).toLocaleDateString(undefined, {weekday:"short", day:"numeric", month:"short"});
+  }
 
   /* ---------------- networking ---------------- */
   var connBanner = document.getElementById("connBanner");
@@ -475,6 +544,67 @@
       + '</svg>';
   }
 
+  /* ---------------- firework celebration ---------------- */
+  var fwCanvas = null, fwCtx = null, fwRAF = null, fwParticles = [];
+  var FIREWORK_COLORS = ["#178A73","#F0A23A","#E15C46","#3E7CB1","#9A5FC9","#C9557A","#FFFFFF"];
+  function ensureFireworkCanvas(){
+    if(fwCanvas) return;
+    fwCanvas = document.createElement("canvas");
+    fwCanvas.id = "fireworkCanvas";
+    document.body.appendChild(fwCanvas);
+    fwCtx = fwCanvas.getContext("2d");
+    resizeFireworkCanvas();
+    window.addEventListener("resize", resizeFireworkCanvas);
+  }
+  function resizeFireworkCanvas(){
+    if(!fwCanvas) return;
+    fwCanvas.width = window.innerWidth;
+    fwCanvas.height = window.innerHeight;
+  }
+  function launchFireworks(){
+    if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    ensureFireworkCanvas();
+    var w = fwCanvas.width, h = fwCanvas.height;
+    var burstCount = 3 + Math.floor(Math.random()*2);
+    for(var b=0;b<burstCount;b++){
+      var ox = w*(0.2+0.6*Math.random());
+      var oy = h*(0.15+0.4*Math.random());
+      var color = FIREWORK_COLORS[Math.floor(Math.random()*FIREWORK_COLORS.length)];
+      var count = 28;
+      for(var i=0;i<count;i++){
+        var angle = (Math.PI*2*i)/count + Math.random()*0.3;
+        var speed = 2.8 + Math.random()*3.6;
+        fwParticles.push({
+          x:ox, y:oy,
+          vx:Math.cos(angle)*speed,
+          vy:Math.sin(angle)*speed,
+          color:color,
+          life:1,
+          decay:0.011 + Math.random()*0.012
+        });
+      }
+    }
+    if(!fwRAF) fwRAF = requestAnimationFrame(fwLoop);
+  }
+  function fwLoop(){
+    fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+    for(var i=fwParticles.length-1;i>=0;i--){
+      var p = fwParticles[i];
+      p.vy += 0.05;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+      if(p.life<=0){ fwParticles.splice(i,1); continue; }
+      fwCtx.globalAlpha = Math.max(p.life, 0);
+      fwCtx.fillStyle = p.color;
+      fwCtx.beginPath();
+      fwCtx.arc(p.x, p.y, 2.8, 0, Math.PI*2);
+      fwCtx.fill();
+    }
+    fwCtx.globalAlpha = 1;
+    fwRAF = fwParticles.length ? requestAnimationFrame(fwLoop) : null;
+  }
+
   /* ---------------- rendering ---------------- */
   var app = document.getElementById("app");
   var topbar = document.getElementById("topbar");
@@ -505,7 +635,8 @@
   function render(){
     withFocusPreserved(function(){
       if(route.kidId){
-        renderKid(route.kidId);
+        if(route.view==="edit") renderKidEdit(route.kidId);
+        else renderKidOverview(route.kidId);
       }else{
         renderHome();
       }
@@ -555,7 +686,7 @@
     app.innerHTML = html;
 
     app.querySelectorAll("[data-open]").forEach(function(el){
-      el.addEventListener("click", function(){ route.kidId = el.getAttribute("data-open"); render(); });
+      el.addEventListener("click", function(){ route.kidId = el.getAttribute("data-open"); route.view = "overview"; render(); });
     });
     app.querySelectorAll("[data-ask-remove]").forEach(function(el){
       el.addEventListener("click", function(){ confirmRemoveId = el.getAttribute("data-ask-remove"); renderHome(); });
@@ -585,7 +716,7 @@
     }
   }
 
-  function renderKid(kidId){
+  function renderKidOverview(kidId){
     var kid = state.kids.find(function(k){return k.id===kidId;});
     if(!kid){ route.kidId=null; return render(); }
 
@@ -594,6 +725,73 @@
       + '<div class="mascot">'+mascotLogo(40)+'</div>'
       + '<div class="brand"><h1 style="font-size:22px;">Dojoy<span class="dot">.</span></h1></div>';
     document.getElementById("backBtn").addEventListener("click", function(){ route.kidId=null; render(); });
+
+    var days = groupByDay(kid);
+    var today = dayStartOf(Date.now());
+    if(!days.length || days[days.length-1].dayStart!==today){
+      days.push({dayStart:today, total:0, entries:[]});
+    }
+    var todayBucket = days[days.length-1];
+
+    var html = '<div class="kid-header">'
+      + '<div class="avatar-wrap">'
+      + '<div class="avatar" style="'+avatarStyle(kid)+';width:64px;height:64px;font-size:24px;">'+(kid.photo?'':initials(kid.name))+'</div>'
+      + '<button class="avatar-edit-btn" data-edit-photo="'+kid.id+'" aria-label="Change photo for '+esc(kid.name)+'">'+svgCamera()+'</button>'
+      + '</div>'
+      + '<div class="meta"><h2>'+esc(kid.name)+'</h2><span>Overview of the day</span></div>'
+      + '<button class="btn btn-primary edit-points-btn" data-edit-points="1">Edit points</button>'
+      + '</div>';
+
+    html += '<div class="today-card">'
+      + '<div class="today-label">Today</div>'
+      + '<div class="today-total'+(todayBucket.total<0?' neg':'')+'">'+todayBucket.total+'</div>'
+      + '</div>';
+
+    if(todayBucket.entries.length){
+      var byCat = {};
+      todayBucket.entries.forEach(function(e){ byCat[e.catId] = (byCat[e.catId]||0) + e.delta; });
+      html += '<div class="today-chips">';
+      CATEGORIES.forEach(function(cat){
+        if(byCat[cat.id]){
+          var v = byCat[cat.id];
+          html += '<div class="today-chip"><div class="today-chip-icon">'+cat.icon()+'</div><span>'+esc(cat.label)+'</span><span class="today-chip-count'+(v<0?' neg':'')+'">'+(v>0?'+':'')+v+'</span></div>';
+        }
+      });
+      html += '</div>';
+    }
+
+    html += '<div class="day-strip-label">Points by day</div>';
+    html += '<div class="day-strip-wrap" id="dayStripWrap"><div class="day-strip">';
+    days.forEach(function(d){
+      var isToday = d.dayStart===today;
+      html += '<div class="day-card'+(isToday?' current':'')+'"><div class="day-card-label">'+esc(dayLabel(d.dayStart))+'</div><div class="day-card-total'+(d.total<0?' neg':'')+'">'+d.total+'</div></div>';
+    });
+    html += '</div></div>';
+
+    app.innerHTML = html;
+
+    document.querySelector("[data-edit-points]").addEventListener("click", function(){ route.view = "edit"; render(); });
+    var editPhotoBtn = app.querySelector("[data-edit-photo]");
+    if(editPhotoBtn) editPhotoBtn.addEventListener("click", function(){ openEditPhoto(kid); });
+
+    var stripWrap = document.getElementById("dayStripWrap");
+    if(stripWrap) stripWrap.scrollLeft = stripWrap.scrollWidth;
+
+    if(!document.activeElement || document.activeElement===document.body){
+      var firstFocusable = app.querySelector("[data-edit-points]");
+      if(firstFocusable) firstFocusable.focus();
+    }
+  }
+
+  function renderKidEdit(kidId){
+    var kid = state.kids.find(function(k){return k.id===kidId;});
+    if(!kid){ route.kidId=null; return render(); }
+
+    topbar.innerHTML =
+      '<button class="backbtn" id="backBtn" aria-label="Back">'+svgBack()+'</button>'
+      + '<div class="mascot">'+mascotLogo(40)+'</div>'
+      + '<div class="brand"><h1 style="font-size:22px;">Dojoy<span class="dot">.</span></h1></div>';
+    document.getElementById("backBtn").addEventListener("click", function(){ route.view="overview"; render(); });
 
     var total = kidTotal(kid);
     var html = '<div class="kid-header">'
@@ -653,7 +851,7 @@
   function doAddPoint(kid, catId, delta){
     if(delta<0 && catCount(kid, catId)<=0) return;
     // optimistic UI
-    kid.log.push({catId:catId, delta:delta});
+    kid.log.push({catId:catId, delta:delta, ts:Date.now()});
     var totalEl = app.querySelector(".kid-total");
     if(totalEl) totalEl.textContent = kidTotal(kid);
     var countEl = app.querySelector('[data-count="'+catId+'"]');
@@ -662,6 +860,7 @@
       countEl.textContent = newCount;
       countEl.classList.toggle("neg", newCount<0);
     }
+    if(delta>0) launchFireworks();
     var popEl = app.querySelector('[data-pop="'+catId+'"]');
     if(popEl){
       popEl.textContent = (delta>0?'+':'') + delta;
@@ -669,7 +868,7 @@
       void popEl.offsetWidth;
       popEl.className = "pop show";
     }
-    if(logOpenIds[kid.id]) withFocusPreserved(function(){ renderKid(kid.id); });
+    if(logOpenIds[kid.id]) withFocusPreserved(function(){ renderKidEdit(kid.id); });
 
     addPointRemote(kid.id, catId, delta).then(function(){
       if(route.kidId===kid.id) render();

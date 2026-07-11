@@ -133,7 +133,7 @@ const server = http.createServer((req, res) => {
       if (delta < 0 && current <= 0) {
         return sendJSON(res, 200, state);
       }
-      kid.log.push({ catId, delta });
+      kid.log.push({ catId, delta, ts: Date.now() });
       if (kid.log.length > 500) kid.log = kid.log.slice(-500);
       writeState(state).then(() => sendJSON(res, 200, state));
     });
