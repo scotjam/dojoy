@@ -558,6 +558,11 @@
       });
     });
     app.querySelector("[data-add]").addEventListener("click", openAddKid);
+
+    if(!document.activeElement || document.activeElement===document.body){
+      var firstTile = app.querySelector(".kid-card") || app.querySelector("[data-add]");
+      if(firstTile) firstTile.focus();
+    }
   }
 
   function renderKid(kidId){
@@ -582,12 +587,12 @@
       var count = catCount(kid, cat.id);
       var tintExpr = "color-mix(in srgb, var("+cat.accent+") 16%, var(--card))";
       html += '<div class="cat-row" style="--badge-accent:var('+cat.accent+');--badge-tint:'+tintExpr+';">'
-        + '<button class="cat-btn minus" data-minus="'+cat.id+'" aria-label="Remove a point for '+esc(cat.label)+'">'+svgMinus()+'</button>'
+        + '<button class="cat-btn plus" data-plus="'+cat.id+'" aria-label="Add a point for '+esc(cat.label)+'">'+svgPlus()+'</button>'
         + '<div class="cat-mid">'
         + '<div class="cat-badge">'+cat.icon()+'<span class="pop" data-pop="'+cat.id+'"></span></div>'
         + '<div class="cat-text"><div class="cat-label">'+esc(cat.label)+'</div><div class="cat-count'+(count<0?' neg':'')+'" data-count="'+cat.id+'">'+count+'</div></div>'
         + '</div>'
-        + '<button class="cat-btn plus" data-plus="'+cat.id+'" aria-label="Add a point for '+esc(cat.label)+'">'+svgPlus()+'</button>'
+        + '<button class="cat-btn minus" data-minus="'+cat.id+'" aria-label="Remove a point for '+esc(cat.label)+'">'+svgMinus()+'</button>'
         + '</div>';
     });
     html += '</div>';
