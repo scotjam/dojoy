@@ -885,7 +885,7 @@
 
     var html = '<div class="kid-grid">';
     if(state.kids.length){
-      var teamTotal = state.kids.reduce(function(sum,k){return sum+kidTotal(k);},0);
+      var teamTotal = (state.teamLog||[]).reduce(function(sum,e){return sum+e.delta;},0);
       html += '<div class="kid-wrap">';
       html += '<button class="kid-card team-card" data-open-team="1">'
         + '<div class="avatar team-avatar">'+mascotLogo(40)+'</div>'
