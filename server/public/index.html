@@ -775,44 +775,96 @@
     var ctx = ensureAudioCtx();
     if(!ctx) return;
     var now = ctx.currentTime;
-    var duration = 2.1;
+    var duration = 2.3;
 
+    // shared noise buffer, reused for the crowd bed and every clap/whoosh
     var bufferSize = Math.floor(ctx.sampleRate*duration);
-    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    var data = buffer.getChannelData(0);
+    var noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    var data = noiseBuffer.getChannelData(0);
     for(var i=0;i<bufferSize;i++){ data[i] = Math.random()*2-1; }
+
+    // crowd "roar" bed: a wobbly bandpass sweep so it doesn't sound like one clean whoosh
     var roar = ctx.createBufferSource();
-    roar.buffer = buffer;
+    roar.buffer = noiseBuffer;
     var roarFilter = ctx.createBiquadFilter();
     roarFilter.type = "bandpass";
-    roarFilter.Q.value = 0.7;
-    roarFilter.frequency.setValueAtTime(700, now);
-    roarFilter.frequency.linearRampToValueAtTime(1400, now+duration*0.5);
-    roarFilter.frequency.linearRampToValueAtTime(500, now+duration);
+    roarFilter.Q.value = 1.3;
+    var segs = 6;
+    for(var s=0;s<=segs;s++){
+      var t = now + (duration*s)/segs;
+      var freq = 550 + Math.random()*900;
+      if(s===0) roarFilter.frequency.setValueAtTime(freq, t);
+      else roarFilter.frequency.linearRampToValueAtTime(freq, t);
+    }
     var roarGain = ctx.createGain();
     roarGain.gain.setValueAtTime(0.0001, now);
-    roarGain.gain.exponentialRampToValueAtTime(0.22, now+0.35);
-    roarGain.gain.setValueAtTime(0.22, now+duration*0.55);
+    roarGain.gain.exponentialRampToValueAtTime(0.26, now+0.4);
+    roarGain.gain.setValueAtTime(0.26, now+duration*0.6);
     roarGain.gain.exponentialRampToValueAtTime(0.0001, now+duration);
     roar.connect(roarFilter).connect(roarGain).connect(ctx.destination);
     roar.start(now);
     roar.stop(now+duration);
 
-    var whoops = 7;
+    // low rumble layer underneath, for body
+    var rumble = ctx.createBufferSource();
+    rumble.buffer = noiseBuffer;
+    var rumbleFilter = ctx.createBiquadFilter();
+    rumbleFilter.type = "lowpass";
+    rumbleFilter.frequency.value = 320;
+    var rumbleGain = ctx.createGain();
+    rumbleGain.gain.setValueAtTime(0.0001, now);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.14, now+0.5);
+    rumbleGain.gain.setValueAtTime(0.14, now+duration*0.6);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.0001, now+duration);
+    rumble.connect(rumbleFilter).connect(rumbleGain).connect(ctx.destination);
+    rumble.start(now);
+    rumble.stop(now+duration);
+
+    // applause: many short filtered noise "claps" scattered across the duration
+    var claps = 70;
+    for(var c=0;c<claps;c++){
+      var cStart = now + 0.05 + Math.random()*(duration-0.3);
+      var clap = ctx.createBufferSource();
+      clap.buffer = noiseBuffer;
+      var offset = Math.random()*(duration-0.05);
+      var clapFilter = ctx.createBiquadFilter();
+      clapFilter.type = "highpass";
+      clapFilter.frequency.value = 1800+Math.random()*1800;
+      var clapGain = ctx.createGain();
+      var clapVol = 0.05+Math.random()*0.07;
+      clapGain.gain.setValueAtTime(0.0001, cStart);
+      clapGain.gain.exponentialRampToValueAtTime(clapVol, cStart+0.006);
+      clapGain.gain.exponentialRampToValueAtTime(0.0001, cStart+0.035+Math.random()*0.02);
+      clap.connect(clapFilter).connect(clapGain).connect(ctx.destination);
+      clap.start(cStart, offset, 0.045);
+    }
+
+    // individual shouting "whoops" - voice-like with vibrato, staggered
+    var whoops = 10;
     for(var w=0;w<whoops;w++){
-      var start = now + 0.1 + Math.random()*(duration-0.4);
+      var start = now + 0.08 + Math.random()*(duration-0.5);
       var whoop = ctx.createOscillator();
       var whoopGain = ctx.createGain();
-      whoop.type = "sawtooth";
-      var base = 260 + Math.random()*260;
+      whoop.type = Math.random()<0.5 ? "sawtooth" : "square";
+      var base = 240 + Math.random()*320;
       whoop.frequency.setValueAtTime(base, start);
-      whoop.frequency.exponentialRampToValueAtTime(base*1.6, start+0.18);
-      whoop.frequency.exponentialRampToValueAtTime(base*1.1, start+0.4);
+      whoop.frequency.exponentialRampToValueAtTime(base*(1.4+Math.random()*0.5), start+0.15+Math.random()*0.08);
+      whoop.frequency.exponentialRampToValueAtTime(base*1.05, start+0.42);
+
+      var vibrato = ctx.createOscillator();
+      var vibratoGain = ctx.createGain();
+      vibrato.frequency.value = 7+Math.random()*4;
+      vibratoGain.gain.value = base*0.03;
+      vibrato.connect(vibratoGain).connect(whoop.frequency);
+      vibrato.start(start);
+      vibrato.stop(start+0.5);
+
       var whoopFilter = ctx.createBiquadFilter();
-      whoopFilter.type = "lowpass";
-      whoopFilter.frequency.value = 1400;
+      whoopFilter.type = "bandpass";
+      whoopFilter.frequency.value = 900+Math.random()*500;
+      whoopFilter.Q.value = 1.1;
       whoopGain.gain.setValueAtTime(0.0001, start);
-      whoopGain.gain.exponentialRampToValueAtTime(0.05+Math.random()*0.03, start+0.08);
+      whoopGain.gain.exponentialRampToValueAtTime(0.06+Math.random()*0.035, start+0.07);
       whoopGain.gain.exponentialRampToValueAtTime(0.0001, start+0.42);
       whoop.connect(whoopFilter).connect(whoopGain).connect(ctx.destination);
       whoop.start(start);
