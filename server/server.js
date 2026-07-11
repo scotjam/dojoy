@@ -139,6 +139,25 @@ const server = http.createServer((req, res) => {
     });
   }
 
+  if (p === "/api/team/points" && req.method === "POST") {
+    return readJsonBody(req, 4 * 1024, (body) => {
+      if (!body || !body.catId || typeof body.delta !== "number") {
+        return sendJSON(res, 400, { error: "catId and delta required" });
+      }
+      const catId = String(body.catId).slice(0, 40);
+      const delta = body.delta > 0 ? 1 : -1;
+      const state = readState();
+      const ts = Date.now();
+      state.kids.forEach((kid) => {
+        const current = kid.log.reduce((sum, e) => (e.catId === catId ? sum + e.delta : sum), 0);
+        if (delta < 0 && current <= 0) return;
+        kid.log.push({ catId, delta, ts });
+        if (kid.log.length > 500) kid.log = kid.log.slice(-500);
+      });
+      writeState(state).then(() => sendJSON(res, 200, state));
+    });
+  }
+
   if (p.startsWith("/api/")) {
     return sendJSON(res, 404, { error: "not found" });
   }

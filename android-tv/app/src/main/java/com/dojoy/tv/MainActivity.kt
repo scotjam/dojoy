@@ -24,13 +24,14 @@ class MainActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var loadFailed = false
 
-    @Volatile private var onKidPage = false
+    // 0 = profile-select screen, 1 = kid overview, 2 = kid edit-points screen
+    @Volatile private var screenDepth = 0
     private var lastBackPressAt = 0L
 
     inner class JsBridge {
         @JavascriptInterface
-        fun onRouteChanged(isKidPage: Boolean) {
-            mainHandler.post { onKidPage = isKidPage }
+        fun onRouteChanged(depth: Int) {
+            mainHandler.post { screenDepth = depth }
         }
     }
 
@@ -83,8 +84,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            if (onKidPage) {
-                webView.evaluateJavascript("window.dojoyGoHome && window.dojoyGoHome();", null)
+            if (screenDepth > 0) {
+                webView.evaluateJavascript("window.dojoyGoBack && window.dojoyGoBack();", null)
                 return true
             }
             val now = System.currentTimeMillis()

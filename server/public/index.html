@@ -94,6 +94,10 @@
   .kid-card:hover{transform:translateY(-2px);box-shadow:0 1px 0 var(--line), 0 10px 22px var(--shadow);}
   .kid-card:active{transform:translateY(0px) scale(.99);}
   .kid-remove-row{display:flex;align-items:center;justify-content:center;gap:8px;min-height:30px;flex-wrap:wrap;}
+  .team-card{background:var(--fur-tint);border-color:var(--fur);}
+  .team-avatar{background:var(--fur-tint);box-shadow:inset 0 0 0 3px var(--fur);}
+  .team-avatar svg{width:100%;height:100%;}
+  .team-hint{font-size:12.5px;font-weight:700;color:var(--ink-soft);}
   .remove-link{
     appearance:none;border:none;background:none;color:var(--ink-soft);font-family:inherit;
     font-size:12.5px;font-weight:700;cursor:pointer;padding:4px 8px;border-radius:8px;
@@ -323,7 +327,7 @@
   ];
 
   var state = {kids:[]};
-  var route = {kidId:null, view:"overview"};
+  var route = {kidId:null, view:"overview", team:false};
   var logOpenIds = {};
   var modalOpen = false;
   var confirmRemoveId = null;
@@ -394,6 +398,11 @@
   }
   function addPointRemote(kidId, catId, delta){
     return api("/api/kids/"+kidId+"/points", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({catId:catId, delta:delta})
+    }).then(function(s){ state = s; });
+  }
+  function teamPointsRemote(catId, delta){
+    return api("/api/team/points", {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({catId:catId, delta:delta})
     }).then(function(s){ state = s; });
   }
@@ -673,7 +682,7 @@
   var app = document.getElementById("app");
   var topbar = document.getElementById("topbar");
 
-  var FOCUS_ATTRS = ["data-plus","data-minus","data-open","data-ask-remove","data-cancel-remove","data-confirm-remove"];
+  var FOCUS_ATTRS = ["data-plus","data-minus","data-open","data-open-team","data-ask-remove","data-cancel-remove","data-confirm-remove"];
   function getFocusKey(){
     var el = document.activeElement;
     if(!el || el===document.body) return null;
@@ -698,7 +707,9 @@
 
   function render(){
     withFocusPreserved(function(){
-      if(route.kidId){
+      if(route.team){
+        renderTeam();
+      }else if(route.kidId){
         if(route.view==="edit") renderKidEdit(route.kidId);
         else renderKidOverview(route.kidId);
       }else{
@@ -710,11 +721,20 @@
   function notifyNativeRoute(){
     try{
       if(window.AndroidBridge && window.AndroidBridge.onRouteChanged){
-        window.AndroidBridge.onRouteChanged(!!route.kidId);
+        var depth = route.team ? 1 : (!route.kidId ? 0 : (route.view==="edit" ? 2 : 1));
+        window.AndroidBridge.onRouteChanged(depth);
       }
     }catch(e){}
   }
-  window.dojoyGoHome = function(){ route.kidId = null; render(); };
+  window.dojoyGoBack = function(){
+    if(route.team){
+      route.team = false; render();
+    }else if(route.kidId && route.view==="edit"){
+      route.view = "overview"; render();
+    }else if(route.kidId){
+      route.kidId = null; render();
+    }
+  };
 
   function renderHome(){
     topbar.innerHTML =
@@ -722,6 +742,17 @@
       + '<div class="brand"><h1>Dojoy<span class="dot">.</span></h1><p>Point up the good stuff</p></div>';
 
     var html = '<div class="kid-grid">';
+    if(state.kids.length){
+      var teamTotal = state.kids.reduce(function(sum,k){return sum+kidTotal(k);},0);
+      html += '<div class="kid-wrap">';
+      html += '<button class="kid-card team-card" data-open-team="1">'
+        + '<div class="avatar team-avatar">'+mascotLogo(40)+'</div>'
+        + '<div class="kid-name">Whole team</div>'
+        + '<div class="kid-score">'+teamTotal+'</div>'
+        + '</button>';
+      html += '<div class="kid-remove-row"><span class="team-hint">Points go to everyone</span></div>';
+      html += '</div>';
+    }
     state.kids.forEach(function(kid){
       html += '<div class="kid-wrap">';
       html += '<button class="kid-card" data-open="'+kid.id+'">'
@@ -752,6 +783,8 @@
     app.querySelectorAll("[data-open]").forEach(function(el){
       el.addEventListener("click", function(){ route.kidId = el.getAttribute("data-open"); route.view = "overview"; render(); });
     });
+    var openTeamBtn = app.querySelector("[data-open-team]");
+    if(openTeamBtn) openTeamBtn.addEventListener("click", function(){ route.team = true; render(); });
     app.querySelectorAll("[data-ask-remove]").forEach(function(el){
       el.addEventListener("click", function(){ confirmRemoveId = el.getAttribute("data-ask-remove"); renderHome(); });
     });
@@ -778,6 +811,72 @@
       var firstTile = app.querySelector(".kid-card") || app.querySelector("[data-add]");
       if(firstTile) firstTile.focus();
     }
+  }
+
+  function teamCatCount(catId){
+    return state.kids.reduce(function(sum,kid){return sum+catCount(kid,catId);},0);
+  }
+
+  function renderTeam(){
+    topbar.innerHTML =
+      '<button class="backbtn" id="backBtn" aria-label="Back">'+svgBack()+'</button>'
+      + '<div class="mascot">'+mascotLogo(40)+'</div>'
+      + '<div class="brand"><h1 style="font-size:22px;">Dojoy<span class="dot">.</span></h1></div>';
+    document.getElementById("backBtn").addEventListener("click", function(){ route.team=false; render(); });
+
+    var html = '<div class="kid-header">'
+      + '<div class="avatar team-avatar" style="width:64px;height:64px;">'+mascotLogo(40)+'</div>'
+      + '<div class="meta"><h2>Whole team</h2><span>Points here are given to every kid at once</span></div>'
+      + '</div>';
+
+    html += '<div class="cat-grid">';
+    CATEGORIES.forEach(function(cat){
+      var count = teamCatCount(cat.id);
+      var tintExpr = "color-mix(in srgb, var("+cat.accent+") 16%, var(--card))";
+      html += '<div class="cat-row" style="--badge-accent:var('+cat.accent+');--badge-tint:'+tintExpr+';">'
+        + '<button class="cat-btn plus" data-plus="'+cat.id+'" aria-label="Add a point for '+esc(cat.label)+' to everyone">'+svgPlus()+'</button>'
+        + '<div class="cat-mid">'
+        + '<div class="cat-badge">'+cat.icon()+'<span class="pop" data-pop="'+cat.id+'"></span></div>'
+        + '<div class="cat-text"><div class="cat-label">'+esc(cat.label)+'</div><div class="cat-count'+(count<0?' neg':'')+'" data-count="'+cat.id+'">'+count+'</div></div>'
+        + '</div>'
+        + '<button class="cat-btn minus" data-minus="'+cat.id+'" aria-label="Remove a point for '+esc(cat.label)+' from everyone">'+svgMinus()+'</button>'
+        + '</div>';
+    });
+    html += '</div>';
+
+    app.innerHTML = html;
+
+    app.querySelectorAll("[data-plus]").forEach(function(el){
+      el.addEventListener("click", function(){ doAddTeamPoint(el.getAttribute("data-plus"), 1); });
+    });
+    app.querySelectorAll("[data-minus]").forEach(function(el){
+      el.addEventListener("click", function(){ doAddTeamPoint(el.getAttribute("data-minus"), -1); });
+    });
+  }
+
+  function doAddTeamPoint(catId, delta){
+    var ts = Date.now();
+    state.kids.forEach(function(kid){
+      if(delta<0 && catCount(kid, catId)<=0) return;
+      kid.log.push({catId:catId, delta:delta, ts:ts});
+    });
+    var countEl = app.querySelector('[data-count="'+catId+'"]');
+    if(countEl){
+      var newCount = teamCatCount(catId);
+      countEl.textContent = newCount;
+      countEl.classList.toggle("neg", newCount<0);
+    }
+    if(delta>0) launchFireworks();
+    var popEl = app.querySelector('[data-pop="'+catId+'"]');
+    if(popEl){
+      popEl.textContent = (delta>0?'+':'') + delta;
+      popEl.className = "pop";
+      void popEl.offsetWidth;
+      popEl.className = "pop show";
+    }
+    teamPointsRemote(catId, delta).then(function(){
+      if(route.team) render();
+    }).catch(function(){ /* keep optimistic state; will reconcile on next poll */ });
   }
 
   function renderKidOverview(kidId){
