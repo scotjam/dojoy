@@ -136,6 +136,12 @@
     box-shadow:0 1px 0 var(--line), 0 6px 16px var(--shadow); margin-bottom:20px; flex-wrap:wrap;
   }
   .kid-header .avatar{width:64px;height:64px;font-size:24px;}
+  .avatar-wrap{position:relative;flex:0 0 auto;}
+  .avatar-edit-btn{
+    position:absolute;bottom:-4px;right:-4px;width:26px;height:26px;border-radius:50%;border:2px solid var(--card);
+    background:var(--bandana);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  }
+  .avatar-edit-btn:hover{background:var(--bandana-dark);}
   .kid-header .meta{flex:1;min-width:140px;}
   .kid-header .meta h2{margin:0 0 2px;font-size:22px;font-weight:800;}
   .kid-header .meta span{color:var(--ink-soft);font-size:13px;font-weight:600;}
@@ -310,6 +316,11 @@
   }
   function removeKidRemote(kidId){
     return api("/api/kids/"+kidId, {method:"DELETE"}).then(function(s){ state = s; });
+  }
+  function updatePhotoRemote(kidId, photo){
+    return api("/api/kids/"+kidId, {
+      method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({photo:photo})
+    }).then(function(s){ state = s; });
   }
   function addPointRemote(kidId, catId, delta){
     return api("/api/kids/"+kidId+"/points", {
@@ -577,7 +588,10 @@
 
     var total = kidTotal(kid);
     var html = '<div class="kid-header">'
+      + '<div class="avatar-wrap">'
       + '<div class="avatar" style="'+avatarStyle(kid)+';width:64px;height:64px;font-size:24px;">'+(kid.photo?'':initials(kid.name))+'</div>'
+      + '<button class="avatar-edit-btn" data-edit-photo="'+kid.id+'" aria-label="Change photo for '+esc(kid.name)+'">'+svgCamera()+'</button>'
+      + '</div>'
       + '<div class="meta"><h2>'+esc(kid.name)+'</h2><span>Tap a badge to add a point · use the − to remove one</span></div>'
       + '<div class="kid-total">'+total+'</div>'
       + '</div>';
@@ -623,6 +637,8 @@
       logOpenIds[kid.id] = !logOpenIds[kid.id];
       document.getElementById("logList").classList.toggle("hidden", !logOpenIds[kid.id]);
     });
+    var editPhotoBtn = app.querySelector("[data-edit-photo]");
+    if(editPhotoBtn) editPhotoBtn.addEventListener("click", function(){ openEditPhoto(kid); });
   }
 
   function doAddPoint(kid, catId, delta){
@@ -670,6 +686,7 @@
   function svgBack(){return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg>';}
   function svgChevron(){return '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;"><path d="M6 9l6 6 6-6"/></svg>';}
   function svgCast(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5h13a2 2 0 0 1 2 2V17"/><path d="M3 11a6 6 0 0 1 6 6"/><path d="M3 15a2 2 0 0 1 2 2"/><rect x="17" y="15" width="4" height="4" rx="1"/></svg>';}
+  function svgCamera(){return '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5h3l1.5-2h7l1.5 2h3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/><circle cx="12" cy="13" r="3.4"/></svg>';}
 
   /* ---------------- modals ---------------- */
   var modalRoot = document.getElementById("modal-root");
@@ -738,6 +755,69 @@
       }).catch(function(){
         saveBtn.disabled = false;
         saveBtn.textContent = "Add kid";
+        alert("Couldn't reach the Dojoy server — check your wifi and try again.");
+      });
+    });
+  }
+
+  function openEditPhoto(kid){
+    modalOpen = true;
+    var photoData = kid.photo || null;
+
+    modalRoot.innerHTML =
+      '<div class="overlay" id="ovp"><div class="modal">'
+      + '<h3>'+esc(kid.name)+'&rsquo;s photo</h3><p>Choose a new photo, or remove the current one.</p>'
+      + '<div class="field"><div class="photo-row">'
+      + '<div class="photo-preview" id="photoPreview" style="'+avatarStyle(kid)+'">'+(kid.photo?'':initials(kid.name))+'</div>'
+      + '<button type="button" class="filebtn" id="photoBtn">Choose photo</button>'
+      + '<input type="file" accept="image/*" id="photoInput" class="hidden" />'
+      + '</div></div>'
+      + '<div class="modal-actions">'
+      + '<button class="btn btn-ghost" id="cancelBtn">Cancel</button>'
+      + (kid.photo ? '<button class="btn btn-danger" id="removePhotoBtn">Remove photo</button>' : '')
+      + '<button class="btn btn-primary" id="saveBtn" disabled>Save</button>'
+      + '</div></div></div>';
+
+    var saveBtn = document.getElementById("saveBtn");
+    var pv = document.getElementById("photoPreview");
+
+    document.getElementById("photoBtn").addEventListener("click", function(){ document.getElementById("photoInput").click(); });
+    document.getElementById("photoInput").addEventListener("change", function(ev){
+      var file = ev.target.files[0];
+      if(!file) return;
+      resizeImage(file, 200, function(dataUrl){
+        photoData = dataUrl;
+        pv.textContent = "";
+        pv.style.background = "";
+        pv.style.backgroundImage = "url("+dataUrl+")";
+        pv.style.backgroundSize = "cover";
+        pv.style.backgroundPosition = "center";
+        saveBtn.disabled = false;
+      });
+    });
+
+    var removeBtn = document.getElementById("removePhotoBtn");
+    if(removeBtn){
+      removeBtn.addEventListener("click", function(){
+        photoData = null;
+        pv.style.backgroundImage = "";
+        pv.style.background = "var("+kid.color+")";
+        pv.textContent = initials(kid.name);
+        saveBtn.disabled = false;
+      });
+    }
+
+    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+    document.getElementById("ovp").addEventListener("click", function(ev){ if(ev.target.id==="ovp") closeModal(); });
+    saveBtn.addEventListener("click", function(){
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Saving…";
+      updatePhotoRemote(kid.id, photoData).then(function(){
+        closeModal();
+        render();
+      }).catch(function(){
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save";
         alert("Couldn't reach the Dojoy server — check your wifi and try again.");
       });
     });

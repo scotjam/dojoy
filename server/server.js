@@ -105,6 +105,18 @@ const server = http.createServer((req, res) => {
     state.kids = state.kids.filter((k) => k.id !== kidMatch[1]);
     return writeState(state).then(() => sendJSON(res, 200, state));
   }
+  if (kidMatch && req.method === "PATCH") {
+    return readJsonBody(req, 8 * 1024 * 1024, (body) => {
+      const state = readState();
+      const kid = state.kids.find((k) => k.id === kidMatch[1]);
+      if (!kid) return sendJSON(res, 404, { error: "not found" });
+      if (!body || !("photo" in body)) {
+        return sendJSON(res, 400, { error: "photo required" });
+      }
+      kid.photo = typeof body.photo === "string" ? body.photo : null;
+      writeState(state).then(() => sendJSON(res, 200, state));
+    });
+  }
 
   const pointMatch = p.match(/^\/api\/kids\/([a-z0-9]+)\/points$/);
   if (pointMatch && req.method === "POST") {
