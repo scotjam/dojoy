@@ -1,0 +1,14 @@
+# server
+server/data/
+server/public/dojoy-tv.apk
+server/public/dojoy-tv-version.json
+node_modules/
+
+# android
+android-tv/local.properties
+android-tv/.gradle/
+android-tv/app/build/
+android-tv/build/
+android-tv/*.iml
+android-tv/.idea/
+android-tv/app/*.apk
