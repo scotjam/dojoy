@@ -10,13 +10,22 @@ const PORT = process.env.PORT || 8080;
 
 function ensureData() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({ kids: [] }, null, 2));
+  if (!fs.existsSync(DATA_FILE)) {
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ kids: [], customCategories: [] }, null, 2));
+  }
 }
 ensureData();
 
+const ACCENT_WHITELIST = [
+  "--fur", "--fur-dark", "--bandana", "--bandana-dark", "--coral",
+  "--avatar-4", "--avatar-5", "--avatar-6",
+];
+
 let writeChain = Promise.resolve();
 function readState() {
-  return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  const state = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+  if (!Array.isArray(state.customCategories)) state.customCategories = [];
+  return state;
 }
 function writeState(state) {
   writeChain = writeChain.then(() => fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2)));
@@ -154,6 +163,22 @@ const server = http.createServer((req, res) => {
         kid.log.push({ catId, delta, ts });
         if (kid.log.length > 500) kid.log = kid.log.slice(-500);
       });
+      writeState(state).then(() => sendJSON(res, 200, state));
+    });
+  }
+
+  if (p === "/api/categories" && req.method === "POST") {
+    return readJsonBody(req, 4 * 1024, (body) => {
+      if (!body || !body.label || !String(body.label).trim()) {
+        return sendJSON(res, 400, { error: "label required" });
+      }
+      const label = String(body.label).trim().slice(0, 30);
+      const emoji = typeof body.emoji === "string" && body.emoji.trim() ? body.emoji.trim().slice(0, 8) : "⭐";
+      const accent = ACCENT_WHITELIST.includes(body.accent) ? body.accent : "--fur";
+      const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 20);
+      const state = readState();
+      const category = { id: "custom-" + (slug || "cat") + "-" + uid(), label, emoji, accent };
+      state.customCategories.push(category);
       writeState(state).then(() => sendJSON(res, 200, state));
     });
   }

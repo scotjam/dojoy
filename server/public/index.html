@@ -172,6 +172,7 @@
   }
   .today-chip-icon{width:26px;height:26px;border-radius:50%;background:var(--paper-alt);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:0 0 auto;}
   .today-chip-icon svg{width:18px;height:18px;}
+  .today-chip-icon .cat-badge-emoji{font-size:15px;}
   .today-chip-count{font-family:ui-monospace,monospace;font-weight:800;color:var(--fur-dark);}
   .today-chip-count.neg{color:var(--coral-dark);}
 
@@ -215,6 +216,14 @@
     box-shadow:inset 0 0 0 1px var(--line);
   }
   .cat-badge svg{width:46px;height:46px;overflow:visible;}
+  .cat-badge-emoji{font-size:32px;line-height:1;}
+  .add-cat-row{
+    appearance:none;border:2px dashed var(--line);background:transparent;border-radius:20px;padding:16px 14px;
+    display:flex;align-items:center;justify-content:center;gap:8px;color:var(--ink-soft);font-weight:700;
+    cursor:pointer;font-family:inherit;font-size:14px;
+  }
+  .add-cat-row:hover{border-color:var(--fur);color:var(--fur-dark);background:var(--fur-tint);}
+  .add-cat-row svg{width:18px;height:18px;}
   .cat-badge::after{
     content:"";position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;
     background:var(--bandana);box-shadow:0 0 0 2.5px var(--card);
@@ -277,6 +286,16 @@
     font-size:13px;cursor:pointer;color:var(--ink);
   }
   .filebtn:hover{border-color:var(--fur);color:var(--fur-dark);}
+  .emoji-row{display:flex;align-items:center;gap:12px;}
+  .emoji-preview{
+    width:48px;height:48px;border-radius:14px;background:var(--paper-alt);flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;font-size:26px;
+  }
+  .emoji-row input[type="text"]{
+    flex:1;padding:11px 13px;border-radius:12px;border:1.5px solid var(--line);background:var(--paper);
+    color:var(--ink);font-size:20px;font-family:inherit;
+  }
+  .emoji-row input[type="text"]:focus{outline:none;border-color:var(--fur);}
   .modal-actions{display:flex;gap:10px;margin-top:6px;}
   .btn{flex:1;border:none;border-radius:12px;padding:12px;font-weight:800;font-size:14.5px;cursor:pointer;font-family:inherit;}
   .btn-primary{background:var(--fur);color:#fff;}
@@ -327,7 +346,21 @@
     {id:"homework", label:"Homework", icon:iconHomework, accent:"--bandana-dark"}
   ];
 
-  var state = {kids:[]};
+  var state = {kids:[], customCategories:[]};
+  var CATEGORY_ACCENTS = ["--fur","--bandana","--bandana-dark","--coral","--avatar-4","--avatar-5","--avatar-6"];
+
+  function emojiIcon(emoji){
+    return '<span class="cat-badge-emoji">'+esc(emoji)+'</span>';
+  }
+  function allCategories(){
+    var custom = (state.customCategories||[]).map(function(c){
+      return {id:c.id, label:c.label, accent:c.accent, icon:function(){ return emojiIcon(c.emoji); }};
+    });
+    return CATEGORIES.concat(custom);
+  }
+  function findCategory(catId){
+    return allCategories().find(function(c){return c.id===catId;});
+  }
   var route = {kidId:null, view:"overview", team:false};
   var logOpenIds = {};
   var modalOpen = false;
@@ -405,6 +438,11 @@
   function teamPointsRemote(catId, delta){
     return api("/api/team/points", {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({catId:catId, delta:delta})
+    }).then(function(s){ state = s; });
+  }
+  function addCategoryRemote(payload){
+    return api("/api/categories", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
     }).then(function(s){ state = s; });
   }
 
@@ -831,7 +869,7 @@
       + '</div>';
 
     html += '<div class="cat-grid">';
-    CATEGORIES.forEach(function(cat){
+    allCategories().forEach(function(cat){
       var count = teamCatCount(cat.id);
       var tintExpr = "color-mix(in srgb, var("+cat.accent+") 16%, var(--card))";
       html += '<div class="cat-row" style="--badge-accent:var('+cat.accent+');--badge-tint:'+tintExpr+';">'
@@ -915,7 +953,7 @@
       var byCat = {};
       todayBucket.entries.forEach(function(e){ byCat[e.catId] = (byCat[e.catId]||0) + e.delta; });
       html += '<div class="today-chips">';
-      CATEGORIES.forEach(function(cat){
+      allCategories().forEach(function(cat){
         if(byCat[cat.id]){
           var v = byCat[cat.id];
           html += '<div class="today-chip"><div class="today-chip-icon">'+cat.icon()+'</div><span>'+esc(cat.label)+'</span><span class="today-chip-count'+(v<0?' neg':'')+'">'+(v>0?'+':'')+v+'</span></div>';
@@ -968,7 +1006,7 @@
       + '</div>';
 
     html += '<div class="cat-grid">';
-    CATEGORIES.forEach(function(cat){
+    allCategories().forEach(function(cat){
       var count = catCount(kid, cat.id);
       var tintExpr = "color-mix(in srgb, var("+cat.accent+") 16%, var(--card))";
       html += '<div class="cat-row" style="--badge-accent:var('+cat.accent+');--badge-tint:'+tintExpr+';">'
@@ -980,6 +1018,7 @@
         + '<button class="cat-btn minus" data-minus="'+cat.id+'" aria-label="Remove a point for '+esc(cat.label)+'">'+svgMinus()+'</button>'
         + '</div>';
     });
+    html += '<button class="add-cat-row" data-add-category="1">'+svgPlus()+'<span>Add category</span></button>';
     html += '</div>';
 
     var open = !!logOpenIds[kid.id];
@@ -990,7 +1029,7 @@
       html += '<li class="log-empty" style="list-style:none;">No points yet — go tap a badge!</li>';
     }else{
       recent.forEach(function(e){
-        var cat = CATEGORIES.find(function(c){return c.id===e.catId;});
+        var cat = findCategory(e.catId);
         html += '<li><span>'+esc(cat?cat.label:e.catId)+'</span><span class="delta '+(e.delta>0?'pos':'neg')+'">'+(e.delta>0?'+':'')+e.delta+'</span></li>';
       });
     }
@@ -1010,6 +1049,8 @@
     });
     var editPhotoBtn = app.querySelector("[data-edit-photo]");
     if(editPhotoBtn) editPhotoBtn.addEventListener("click", function(){ openEditPhoto(kid); });
+    var addCategoryBtn = app.querySelector("[data-add-category]");
+    if(addCategoryBtn) addCategoryBtn.addEventListener("click", openAddCategory);
   }
 
   function doAddPoint(kid, catId, delta){
@@ -1190,6 +1231,65 @@
       }).catch(function(){
         saveBtn.disabled = false;
         saveBtn.textContent = "Save";
+        alert("Couldn't reach the Dojoy server — check your wifi and try again.");
+      });
+    });
+  }
+
+  function openAddCategory(){
+    modalOpen = true;
+    var chosenAccent = CATEGORY_ACCENTS[allCategories().length % CATEGORY_ACCENTS.length];
+    var chosenEmoji = "⭐";
+
+    modalRoot.innerHTML =
+      '<div class="overlay" id="ovc"><div class="modal">'
+      + '<h3>Add a category</h3><p>Give it a name, an emoji, and a colour.</p>'
+      + '<div class="field"><label>Name</label><input type="text" id="catLabel" maxlength="24" placeholder="e.g. Sharing toys" autofocus /></div>'
+      + '<div class="field"><label>Emoji</label><div class="emoji-row">'
+      + '<div class="emoji-preview" id="emojiPreview">'+chosenEmoji+'</div>'
+      + '<input type="text" id="catEmoji" maxlength="8" placeholder="🎯" value="'+chosenEmoji+'" />'
+      + '</div></div>'
+      + '<div class="field"><label>Colour</label><div class="swatches" id="catSwatches"></div></div>'
+      + '<div class="modal-actions"><button class="btn btn-ghost" id="cancelBtn">Cancel</button><button class="btn btn-primary" id="saveBtn" disabled>Add category</button></div>'
+      + '</div></div>';
+
+    var swatches = document.getElementById("catSwatches");
+    CATEGORY_ACCENTS.forEach(function(c){
+      var d = document.createElement("div");
+      d.className = "swatch" + (c===chosenAccent?" selected":"");
+      d.style.background = "var("+c+")";
+      d.addEventListener("click", function(){
+        chosenAccent = c;
+        swatches.querySelectorAll(".swatch").forEach(function(s){s.classList.remove("selected");});
+        d.classList.add("selected");
+      });
+      swatches.appendChild(d);
+    });
+
+    var labelInput = document.getElementById("catLabel");
+    var emojiInput = document.getElementById("catEmoji");
+    var emojiPreview = document.getElementById("emojiPreview");
+    var saveBtn = document.getElementById("saveBtn");
+    function refreshSaveEnabled(){ saveBtn.disabled = labelInput.value.trim().length===0; }
+    labelInput.addEventListener("input", refreshSaveEnabled);
+    emojiInput.addEventListener("input", function(){
+      chosenEmoji = emojiInput.value.trim() || "⭐";
+      emojiPreview.textContent = chosenEmoji;
+    });
+
+    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+    document.getElementById("ovc").addEventListener("click", function(ev){ if(ev.target.id==="ovc") closeModal(); });
+    saveBtn.addEventListener("click", function(){
+      var label = labelInput.value.trim();
+      if(!label) return;
+      saveBtn.disabled = true;
+      saveBtn.textContent = "Adding…";
+      addCategoryRemote({label:label, emoji:chosenEmoji, accent:chosenAccent}).then(function(){
+        closeModal();
+        render();
+      }).catch(function(){
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Add category";
         alert("Couldn't reach the Dojoy server — check your wifi and try again.");
       });
     });
