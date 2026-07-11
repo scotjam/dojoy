@@ -346,7 +346,7 @@
     {id:"homework", label:"Homework", icon:iconHomework, accent:"--bandana-dark"}
   ];
 
-  var state = {kids:[], customCategories:[]};
+  var state = {kids:[], customCategories:[], teamLog:[]};
   var CATEGORY_ACCENTS = ["--fur","--bandana","--bandana-dark","--coral","--avatar-4","--avatar-5","--avatar-6"];
 
   function emojiIcon(emoji){
@@ -639,6 +639,7 @@
         var angle = (Math.PI*2*i)/count + Math.random()*0.3;
         var speed = 3.6 + Math.random()*5.2;
         fwParticles.push({
+          type:"firework",
           x:ox, y:oy,
           vx:Math.cos(angle)*speed,
           vy:Math.sin(angle)*speed,
@@ -652,10 +653,48 @@
     if(!fwRAF) fwRAF = requestAnimationFrame(fwLoop);
   }
 
+  function spawnConfettiBurst(){
+    var w = fwCanvas.width;
+    var count = 55;
+    for(var i=0;i<count;i++){
+      fwParticles.push({
+        type:"confetti",
+        x:Math.random()*w,
+        y:-20-Math.random()*80,
+        vx:(Math.random()-0.5)*1.6,
+        vy:1.6+Math.random()*2.2,
+        rotation:Math.random()*Math.PI*2,
+        rotationSpeed:(Math.random()-0.5)*0.25,
+        w:5+Math.random()*3.5,
+        h:9+Math.random()*5,
+        color:FIREWORK_COLORS[Math.floor(Math.random()*FIREWORK_COLORS.length)],
+        life:1,
+        decay:0.0035+Math.random()*0.002
+      });
+    }
+    if(!fwRAF) fwRAF = requestAnimationFrame(fwLoop);
+  }
+
   function fwLoop(){
     fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
     for(var i=fwParticles.length-1;i>=0;i--){
       var p = fwParticles[i];
+      if(p.type==="confetti"){
+        p.vy += 0.02;
+        p.x += p.vx + Math.sin(p.rotation)*0.4;
+        p.y += p.vy;
+        p.rotation += p.rotationSpeed;
+        p.life -= p.decay;
+        if(p.life<=0 || p.y>fwCanvas.height+30){ fwParticles.splice(i,1); continue; }
+        fwCtx.globalAlpha = p.life>0.15 ? 1 : p.life/0.15;
+        fwCtx.fillStyle = p.color;
+        fwCtx.save();
+        fwCtx.translate(p.x, p.y);
+        fwCtx.rotate(p.rotation);
+        fwCtx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+        fwCtx.restore();
+        continue;
+      }
       p.vy += 0.045;
       p.vx *= 0.992;
       p.x += p.vx;
@@ -670,6 +709,21 @@
     }
     fwCtx.globalAlpha = 1;
     fwRAF = fwParticles.length ? requestAnimationFrame(fwLoop) : null;
+  }
+
+  function launchTeamCelebration(){
+    if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    ensureFireworkCanvas();
+    fwRoundTimers.forEach(function(t){ clearTimeout(t); });
+    fwRoundTimers = [];
+    playCheerSound();
+    for(var r=0;r<FIREWORK_ROUNDS;r++){
+      fwRoundTimers.push(setTimeout(function(){
+        spawnFireworkRound();
+        spawnConfettiBurst();
+        playFireworkSound();
+      }, r*FIREWORK_ROUND_GAP_MS));
+    }
   }
 
   var fwAudioCtx = null;
@@ -715,6 +769,55 @@
     noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
     noise.start(now+0.12);
     noise.stop(now+0.7);
+  }
+
+  function playCheerSound(){
+    var ctx = ensureAudioCtx();
+    if(!ctx) return;
+    var now = ctx.currentTime;
+    var duration = 2.1;
+
+    var bufferSize = Math.floor(ctx.sampleRate*duration);
+    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for(var i=0;i<bufferSize;i++){ data[i] = Math.random()*2-1; }
+    var roar = ctx.createBufferSource();
+    roar.buffer = buffer;
+    var roarFilter = ctx.createBiquadFilter();
+    roarFilter.type = "bandpass";
+    roarFilter.Q.value = 0.7;
+    roarFilter.frequency.setValueAtTime(700, now);
+    roarFilter.frequency.linearRampToValueAtTime(1400, now+duration*0.5);
+    roarFilter.frequency.linearRampToValueAtTime(500, now+duration);
+    var roarGain = ctx.createGain();
+    roarGain.gain.setValueAtTime(0.0001, now);
+    roarGain.gain.exponentialRampToValueAtTime(0.22, now+0.35);
+    roarGain.gain.setValueAtTime(0.22, now+duration*0.55);
+    roarGain.gain.exponentialRampToValueAtTime(0.0001, now+duration);
+    roar.connect(roarFilter).connect(roarGain).connect(ctx.destination);
+    roar.start(now);
+    roar.stop(now+duration);
+
+    var whoops = 7;
+    for(var w=0;w<whoops;w++){
+      var start = now + 0.1 + Math.random()*(duration-0.4);
+      var whoop = ctx.createOscillator();
+      var whoopGain = ctx.createGain();
+      whoop.type = "sawtooth";
+      var base = 260 + Math.random()*260;
+      whoop.frequency.setValueAtTime(base, start);
+      whoop.frequency.exponentialRampToValueAtTime(base*1.6, start+0.18);
+      whoop.frequency.exponentialRampToValueAtTime(base*1.1, start+0.4);
+      var whoopFilter = ctx.createBiquadFilter();
+      whoopFilter.type = "lowpass";
+      whoopFilter.frequency.value = 1400;
+      whoopGain.gain.setValueAtTime(0.0001, start);
+      whoopGain.gain.exponentialRampToValueAtTime(0.05+Math.random()*0.03, start+0.08);
+      whoopGain.gain.exponentialRampToValueAtTime(0.0001, start+0.42);
+      whoop.connect(whoopFilter).connect(whoopGain).connect(ctx.destination);
+      whoop.start(start);
+      whoop.stop(start+0.45);
+    }
   }
 
   /* ---------------- rendering ---------------- */
@@ -853,7 +956,7 @@
   }
 
   function teamCatCount(catId){
-    return state.kids.reduce(function(sum,kid){return sum+catCount(kid,catId);},0);
+    return (state.teamLog||[]).reduce(function(sum,e){return e.catId===catId ? sum+e.delta : sum;},0);
   }
 
   function renderTeam(){
@@ -865,7 +968,7 @@
 
     var html = '<div class="kid-header">'
       + '<div class="avatar team-avatar" style="width:64px;height:64px;">'+mascotLogo(40)+'</div>'
-      + '<div class="meta"><h2>Whole team</h2><span>Points here are given to every kid at once</span></div>'
+      + '<div class="meta"><h2>Whole team</h2><span>Points here go to everyone at once and also show on each kid\'s own page</span></div>'
       + '</div>';
 
     html += '<div class="cat-grid">';
@@ -894,7 +997,10 @@
   }
 
   function doAddTeamPoint(catId, delta){
+    if(delta<0 && teamCatCount(catId)<=0) return;
     var ts = Date.now();
+    state.teamLog = state.teamLog||[];
+    state.teamLog.push({catId:catId, delta:delta, ts:ts});
     state.kids.forEach(function(kid){
       if(delta<0 && catCount(kid, catId)<=0) return;
       kid.log.push({catId:catId, delta:delta, ts:ts});
@@ -905,7 +1011,7 @@
       countEl.textContent = newCount;
       countEl.classList.toggle("neg", newCount<0);
     }
-    if(delta>0) launchFireworks();
+    if(delta>0) launchTeamCelebration();
     var popEl = app.querySelector('[data-pop="'+catId+'"]');
     if(popEl){
       popEl.textContent = (delta>0?'+':'') + delta;

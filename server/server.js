@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 8080;
 function ensureData() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ kids: [], customCategories: [] }, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ kids: [], customCategories: [], teamLog: [] }, null, 2));
   }
 }
 ensureData();
@@ -25,6 +25,7 @@ let writeChain = Promise.resolve();
 function readState() {
   const state = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
   if (!Array.isArray(state.customCategories)) state.customCategories = [];
+  if (!Array.isArray(state.teamLog)) state.teamLog = [];
   return state;
 }
 function writeState(state) {
@@ -156,7 +157,16 @@ const server = http.createServer((req, res) => {
       const catId = String(body.catId).slice(0, 40);
       const delta = body.delta > 0 ? 1 : -1;
       const state = readState();
+
+      const teamCurrent = state.teamLog.reduce((sum, e) => (e.catId === catId ? sum + e.delta : sum), 0);
+      if (delta < 0 && teamCurrent <= 0) {
+        return sendJSON(res, 200, state);
+      }
+
       const ts = Date.now();
+      state.teamLog.push({ catId, delta, ts });
+      if (state.teamLog.length > 500) state.teamLog = state.teamLog.slice(-500);
+
       state.kids.forEach((kid) => {
         const current = kid.log.reduce((sum, e) => (e.catId === catId ? sum + e.delta : sum), 0);
         if (delta < 0 && current <= 0) return;
