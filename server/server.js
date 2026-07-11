@@ -42,6 +42,7 @@ const MIME = {
   ".css": "text/css",
   ".apk": "application/vnd.android.package-archive",
   ".json": "application/json",
+  ".mp3": "audio/mpeg",
 };
 
 function sendJSON(res, status, body) {
