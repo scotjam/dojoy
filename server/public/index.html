@@ -546,7 +546,11 @@
 
   /* ---------------- firework celebration ---------------- */
   var fwCanvas = null, fwCtx = null, fwRAF = null, fwParticles = [];
+  var fwRoundTimers = [];
   var FIREWORK_COLORS = ["#178A73","#F0A23A","#E15C46","#3E7CB1","#9A5FC9","#C9557A","#FFFFFF"];
+  var FIREWORK_ROUNDS = 4;
+  var FIREWORK_ROUND_GAP_MS = 450;
+
   function ensureFireworkCanvas(){
     if(fwCanvas) return;
     fwCanvas = document.createElement("canvas");
@@ -561,36 +565,51 @@
     fwCanvas.width = window.innerWidth;
     fwCanvas.height = window.innerHeight;
   }
+
   function launchFireworks(){
     if(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     ensureFireworkCanvas();
+    fwRoundTimers.forEach(function(t){ clearTimeout(t); });
+    fwRoundTimers = [];
+    for(var r=0;r<FIREWORK_ROUNDS;r++){
+      fwRoundTimers.push(setTimeout(function(){
+        spawnFireworkRound();
+        playFireworkSound();
+      }, r*FIREWORK_ROUND_GAP_MS));
+    }
+  }
+
+  function spawnFireworkRound(){
     var w = fwCanvas.width, h = fwCanvas.height;
-    var burstCount = 3 + Math.floor(Math.random()*2);
+    var burstCount = 2 + Math.floor(Math.random()*2);
     for(var b=0;b<burstCount;b++){
-      var ox = w*(0.2+0.6*Math.random());
-      var oy = h*(0.15+0.4*Math.random());
+      var ox = w*(0.15+0.7*Math.random());
+      var oy = h*(0.12+0.42*Math.random());
       var color = FIREWORK_COLORS[Math.floor(Math.random()*FIREWORK_COLORS.length)];
-      var count = 28;
+      var count = 46;
       for(var i=0;i<count;i++){
         var angle = (Math.PI*2*i)/count + Math.random()*0.3;
-        var speed = 2.8 + Math.random()*3.6;
+        var speed = 3.6 + Math.random()*5.2;
         fwParticles.push({
           x:ox, y:oy,
           vx:Math.cos(angle)*speed,
           vy:Math.sin(angle)*speed,
           color:color,
+          size:2.8 + Math.random()*2.4,
           life:1,
-          decay:0.011 + Math.random()*0.012
+          decay:0.006 + Math.random()*0.007
         });
       }
     }
     if(!fwRAF) fwRAF = requestAnimationFrame(fwLoop);
   }
+
   function fwLoop(){
     fwCtx.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
     for(var i=fwParticles.length-1;i>=0;i--){
       var p = fwParticles[i];
-      p.vy += 0.05;
+      p.vy += 0.045;
+      p.vx *= 0.992;
       p.x += p.vx;
       p.y += p.vy;
       p.life -= p.decay;
@@ -598,11 +617,56 @@
       fwCtx.globalAlpha = Math.max(p.life, 0);
       fwCtx.fillStyle = p.color;
       fwCtx.beginPath();
-      fwCtx.arc(p.x, p.y, 2.8, 0, Math.PI*2);
+      fwCtx.arc(p.x, p.y, p.size, 0, Math.PI*2);
       fwCtx.fill();
     }
     fwCtx.globalAlpha = 1;
     fwRAF = fwParticles.length ? requestAnimationFrame(fwLoop) : null;
+  }
+
+  var fwAudioCtx = null;
+  function ensureAudioCtx(){
+    if(!fwAudioCtx){
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(AC) fwAudioCtx = new AC();
+    }
+    if(fwAudioCtx && fwAudioCtx.state==="suspended") fwAudioCtx.resume();
+    return fwAudioCtx;
+  }
+  function playFireworkSound(){
+    var ctx = ensureAudioCtx();
+    if(!ctx) return;
+    var now = ctx.currentTime;
+
+    var whistle = ctx.createOscillator();
+    var whistleGain = ctx.createGain();
+    whistle.type = "sine";
+    whistle.frequency.setValueAtTime(500 + Math.random()*200, now);
+    whistle.frequency.exponentialRampToValueAtTime(1700 + Math.random()*300, now+0.14);
+    whistleGain.gain.setValueAtTime(0.0001, now);
+    whistleGain.gain.exponentialRampToValueAtTime(0.16, now+0.05);
+    whistleGain.gain.exponentialRampToValueAtTime(0.0001, now+0.17);
+    whistle.connect(whistleGain).connect(ctx.destination);
+    whistle.start(now);
+    whistle.stop(now+0.2);
+
+    var bufferSize = Math.floor(ctx.sampleRate*0.5);
+    var buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    var data = buffer.getChannelData(0);
+    for(var i=0;i<bufferSize;i++){ data[i] = Math.random()*2-1; }
+    var noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    var noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = "bandpass";
+    noiseFilter.frequency.setValueAtTime(1900, now+0.12);
+    noiseFilter.frequency.exponentialRampToValueAtTime(250, now+0.6);
+    var noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.0001, now+0.12);
+    noiseGain.gain.exponentialRampToValueAtTime(0.55, now+0.16);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now+0.65);
+    noise.connect(noiseFilter).connect(noiseGain).connect(ctx.destination);
+    noise.start(now+0.12);
+    noise.stop(now+0.7);
   }
 
   /* ---------------- rendering ---------------- */
